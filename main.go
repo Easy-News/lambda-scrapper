@@ -3,8 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
-
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/gocolly/colly/v2"
 	"log"
 	"os"
 )
