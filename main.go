@@ -93,12 +93,13 @@ func eachArticle(categoryString string, url string) (results result) {
 	return
 }
 
-func collectLinks(category Category) (categoryString string, url []string) {
+func collectLinks(category Category) (urlWrappers urlWrapper) {
+	var urls []string
 	c := colly.NewCollector()
 
 	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		url = append(url, link)
+		urls = append(urls, link)
 	})
 
 	c.OnError(func(_ *colly.Response, err error) {
@@ -110,7 +111,8 @@ func collectLinks(category Category) (categoryString string, url []string) {
 		log.Fatal(err)
 	}
 
-	categoryString = category.String()
+	urlWrappers.urls = urls
+	urlWrappers.category = category.String()
 	return
 }
 
@@ -120,15 +122,21 @@ type result struct {
 	content  string
 }
 
+type urlWrapper struct {
+	urls     []string
+	category string
+}
+
 func main() {
 	newsCategory := []Category{
-		Politic, Economy, Social, LivingCulture, ItScience, Global,
+		Politic,
 	}
 
 	for _, category := range newsCategory {
-		categoryString, urls := collectLinks(category)
-		for _, url := range urls {
-			data := eachArticle(categoryString, url)
+		//make(chan urlWrapper)
+		urlWrappers := collectLinks(category)
+		for _, url := range urlWrappers.urls {
+			data := eachArticle(urlWrappers.category, url)
 			fmt.Println(data)
 		}
 	}
