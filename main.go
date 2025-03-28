@@ -6,6 +6,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 )
@@ -71,6 +72,20 @@ func eachArticle(categoryString string, url string, ch chan<- result) {
 
 	c := colly.NewCollector()
 
+	userAgents := []string{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+	}
+
+	// Set a request callback to randomize user agent per request
+	c.OnRequest(func(r *colly.Request) {
+		// Choose a random user agent from the slice
+		randomUA := userAgents[rand.Intn(len(userAgents))]
+		r.Headers.Set("User-Agent", randomUA)
+		fmt.Println("Visiting:", r.URL, "with User-Agent:", randomUA)
+	})
+
 	c.OnHTML("#title_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
@@ -98,6 +113,20 @@ func eachArticle(categoryString string, url string, ch chan<- result) {
 func collectLinks(category Category, ch chan<- urlWrapper) {
 	var urls []string
 	c := colly.NewCollector()
+
+	userAgents := []string{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
+	}
+
+	// Set a request callback to randomize user agent per request
+	c.OnRequest(func(r *colly.Request) {
+		// Choose a random user agent from the slice
+		randomUA := userAgents[rand.Intn(len(userAgents))]
+		r.Headers.Set("User-Agent", randomUA)
+		fmt.Println("Visiting:", r.URL, "with User-Agent:", randomUA)
+	})
 
 	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
