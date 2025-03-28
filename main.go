@@ -68,52 +68,35 @@ func db_realated() {
 func eachArticle() {
 	c := colly.NewCollector()
 
-	// This callback function is executed when the collector finds an HTML element matching the "title" tag.
 	c.OnHTML("article#dic_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
-		// Print the text inside the <title> tag from the scraped page.
 		fmt.Println("Page Title:", cleanText)
 	})
 
-	// This callback function is executed whenever an error occurs during scraping.
 	c.OnError(func(_ *colly.Response, err error) {
-		// Log the error message
 		log.Println("Something went wrong:", err)
 	})
 
-	// Start the scraping process by visiting the target website.
-	// Here, we are visiting "https://example.com". You can replace it with any URL you want to scrape.
 	err := c.Visit("https://n.news.naver.com/mnews/article/366/0001064449")
-	// Check if the Visit method returned an error, and log it if so.
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func main() {
-	// Create a new Colly collector instance for scraping.
 	c := colly.NewCollector()
 
-	// Set up a callback that triggers when an element matching the CSS selector is found.
-	// The CSS selector "ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text" does the following:
-	// - "ul[id*='_SECTION_HEADLINE_LIST_']" selects any <ul> tag whose id contains the substring.
-	// - ".sa_text" selects any descendant element with the class "sa_text".
 	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
-		// Extract the value of the "href" attribute from the matched element.
 		link := e.Attr("href")
 
-		// Print the extracted link.
 		fmt.Println("Extracted link:", link)
 	})
 
-	// Define a callback to handle any errors during scraping.
 	c.OnError(func(_ *colly.Response, err error) {
 		log.Println("Error:", err)
 	})
 
-	// Start the scraping process by visiting the target website.
-	// Replace "https://example.com" with the actual URL that contains the desired HTML.
 	err := c.Visit("https://news.naver.com/section/101")
 	if err != nil {
 		log.Fatal(err)
