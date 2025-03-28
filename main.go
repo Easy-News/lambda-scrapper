@@ -4,12 +4,13 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/gocolly/colly/v2"
+	"github.com/gocolly/colly/v2"
 	"log"
 	"os"
+	"strings"
 )
 
-func main() {
+func db_realated() {
 	db, err := sql.Open(os.Getenv("DB"), os.Getenv("DATA_SOURCE")) // 1
 	if err != nil {
 		log.Fatal(err)
@@ -62,4 +63,73 @@ func main() {
 
 	db.Close()
 	fmt.Printf("DB 연동 종료: %+v\n", db.Stats())
+}
+
+func eachArticle(categoryString string, url string) (results result) {
+	c := colly.NewCollector()
+
+	c.OnHTML("#title_area", func(e *colly.HTMLElement) {
+		trimmedText := strings.TrimSpace(e.Text)
+		cleanText := strings.Join(strings.Fields(trimmedText), " ")
+		results.title = cleanText
+	})
+
+	c.OnHTML("article#dic_area", func(e *colly.HTMLElement) {
+		trimmedText := strings.TrimSpace(e.Text)
+		cleanText := strings.Join(strings.Fields(trimmedText), " ")
+		results.content = cleanText
+	})
+
+	c.OnError(func(_ *colly.Response, err error) {
+		log.Println("Something went wrong:", err)
+	})
+
+	err := c.Visit(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	results.category = categoryString
+	return
+}
+
+func collectLinks(category Category) (categoryString string, url []string) {
+	c := colly.NewCollector()
+
+	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
+		link := e.Attr("href")
+		url = append(url, link)
+	})
+
+	c.OnError(func(_ *colly.Response, err error) {
+		log.Println("Error:", err)
+	})
+
+	err := c.Visit(category.Url())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	categoryString = category.String()
+	return
+}
+
+type result struct {
+	title    string
+	category string
+	content  string
+}
+
+func main() {
+	newsCategory := []Category{
+		Politic, Economy, Social, LivingCulture, ItScience, Global,
+	}
+
+	for _, category := range newsCategory {
+		categoryString, urls := collectLinks(category)
+		for _, url := range urls {
+			data := eachArticle(categoryString, url)
+			fmt.Println(data)
+		}
+	}
 }
