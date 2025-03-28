@@ -65,19 +65,22 @@ func db_realated() {
 	fmt.Printf("DB 연동 종료: %+v\n", db.Stats())
 }
 
-func eachArticle(categoryString string, url string) (results result) {
+func eachArticle(categoryString string, url string, ch chan<- result) {
+	var title string
+	var content string
+
 	c := colly.NewCollector()
 
 	c.OnHTML("#title_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
-		results.title = cleanText
+		title = cleanText
 	})
 
 	c.OnHTML("article#dic_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
-		results.content = cleanText
+		content = cleanText
 	})
 
 	c.OnError(func(_ *colly.Response, err error) {
@@ -89,16 +92,16 @@ func eachArticle(categoryString string, url string) (results result) {
 		log.Fatal(err)
 	}
 
-	results.category = categoryString
-	return
+	ch <- result{title, content, categoryString}
 }
 
-func collectLinks(category Category) (categoryString string, url []string) {
+func collectLinks(category Category, ch chan<- urlWrapper) {
+	var urls []string
 	c := colly.NewCollector()
 
 	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		url = append(url, link)
+		urls = append(urls, link)
 	})
 
 	c.OnError(func(_ *colly.Response, err error) {
@@ -110,8 +113,7 @@ func collectLinks(category Category) (categoryString string, url []string) {
 		log.Fatal(err)
 	}
 
-	categoryString = category.String()
-	return
+	ch <- urlWrapper{urls, category.String()}
 }
 
 type result struct {
@@ -120,15 +122,23 @@ type result struct {
 	content  string
 }
 
+type urlWrapper struct {
+	urls     []string
+	category string
+}
+
 func main() {
 	newsCategory := []Category{
 		Politic, Economy, Social, LivingCulture, ItScience, Global,
 	}
-
+	wrapperCh := make(chan urlWrapper)
+	resultCh := make(chan result)
 	for _, category := range newsCategory {
-		categoryString, urls := collectLinks(category)
-		for _, url := range urls {
-			data := eachArticle(categoryString, url)
+		go collectLinks(category, wrapperCh)
+		urlWrappers := <-wrapperCh
+		for _, url := range urlWrappers.urls {
+			go eachArticle(urlWrappers.category, url, resultCh)
+			data := <-resultCh
 			fmt.Println(data)
 		}
 	}
