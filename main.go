@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+	"time"
 )
 
 func db_realated() {
@@ -86,6 +87,12 @@ func eachArticle(categoryString string, url string, ch chan<- result) {
 		fmt.Println("Visiting:", r.URL, "with User-Agent:", randomUA)
 	})
 
+	c.Limit(&colly.LimitRule{
+		DomainGlob:  "*",
+		Parallelism: 2,
+		Delay:       2 * time.Second,
+	})
+
 	c.OnHTML("#title_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
@@ -126,6 +133,12 @@ func collectLinks(category Category, ch chan<- urlWrapper) {
 		randomUA := userAgents[rand.Intn(len(userAgents))]
 		r.Headers.Set("User-Agent", randomUA)
 		fmt.Println("Visiting:", r.URL, "with User-Agent:", randomUA)
+	})
+
+	c.Limit(&colly.LimitRule{
+		DomainGlob:  "*",
+		Parallelism: 2,
+		Delay:       2 * time.Second,
 	})
 
 	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
