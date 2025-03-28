@@ -65,19 +65,22 @@ func db_realated() {
 	fmt.Printf("DB 연동 종료: %+v\n", db.Stats())
 }
 
-func eachArticle(categoryString string, url string) (results result) {
+func eachArticle(categoryString string, url string, ch chan<- result) {
+	var title string
+	var content string
+
 	c := colly.NewCollector()
 
 	c.OnHTML("#title_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
-		results.title = cleanText
+		title = cleanText
 	})
 
 	c.OnHTML("article#dic_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
 		cleanText := strings.Join(strings.Fields(trimmedText), " ")
-		results.content = cleanText
+		content = cleanText
 	})
 
 	c.OnError(func(_ *colly.Response, err error) {
@@ -89,11 +92,10 @@ func eachArticle(categoryString string, url string) (results result) {
 		log.Fatal(err)
 	}
 
-	results.category = categoryString
-	return
+	ch <- result{title, content, categoryString}
 }
 
-func collectLinks(category Category) (urlWrappers urlWrapper) {
+func collectLinks(category Category, ch chan<- urlWrapper) {
 	var urls []string
 	c := colly.NewCollector()
 
@@ -111,9 +113,7 @@ func collectLinks(category Category) (urlWrappers urlWrapper) {
 		log.Fatal(err)
 	}
 
-	urlWrappers.urls = urls
-	urlWrappers.category = category.String()
-	return
+	ch <- urlWrapper{urls, category.String()}
 }
 
 type result struct {
@@ -129,14 +129,16 @@ type urlWrapper struct {
 
 func main() {
 	newsCategory := []Category{
-		Politic,
+		Politic, Economy, Social, LivingCulture, ItScience, Global,
 	}
-
+	wrapperCh := make(chan urlWrapper)
+	resultCh := make(chan result)
 	for _, category := range newsCategory {
-		//make(chan urlWrapper)
-		urlWrappers := collectLinks(category)
+		go collectLinks(category, wrapperCh)
+		urlWrappers := <-wrapperCh
 		for _, url := range urlWrappers.urls {
-			data := eachArticle(urlWrappers.category, url)
+			go eachArticle(urlWrappers.category, url, resultCh)
+			data := <-resultCh
 			fmt.Println(data)
 		}
 	}
