@@ -6,10 +6,9 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
 	"log"
-	"math/rand"
 	"os"
 	"strings"
-	"time"
+	"sync"
 )
 
 func db_realated() {
@@ -67,31 +66,37 @@ func db_realated() {
 	fmt.Printf("DB 연동 종료: %+v\n", db.Stats())
 }
 
-func eachArticle(categoryString string, url string, ch chan<- result) {
+func collectLinks(category Category, ch chan<- urlWrapper, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var urls []string
+	c := colly.NewCollector()
+
+	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
+		link := e.Attr("href")
+		urls = append(urls, link)
+	})
+
+	c.OnError(func(_ *colly.Response, err error) {
+		log.Println("Error in collectLinks:", err)
+	})
+
+	err := c.Visit(category.Url())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ch <- urlWrapper{urls, category.String()}
+}
+
+// eachArticle scrapes an article for a given URL and sends the result through ch.
+func eachArticle(categoryString string, url string, ch chan<- result, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	var title string
 	var content string
 
 	c := colly.NewCollector()
-
-	userAgents := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-	}
-
-	// Set a request callback to randomize user agent per request
-	c.OnRequest(func(r *colly.Request) {
-		// Choose a random user agent from the slice
-		randomUA := userAgents[rand.Intn(len(userAgents))]
-		r.Headers.Set("User-Agent", randomUA)
-		fmt.Println("Visiting:", r.URL, "with User-Agent:", randomUA)
-	})
-
-	c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 2,
-		Delay:       2 * time.Second,
-	})
 
 	c.OnHTML("#title_area", func(e *colly.HTMLElement) {
 		trimmedText := strings.TrimSpace(e.Text)
@@ -106,7 +111,7 @@ func eachArticle(categoryString string, url string, ch chan<- result) {
 	})
 
 	c.OnError(func(_ *colly.Response, err error) {
-		log.Println("Something went wrong:", err)
+		log.Println("Something went wrong in eachArticle:", err)
 	})
 
 	err := c.Visit(url)
@@ -114,48 +119,7 @@ func eachArticle(categoryString string, url string, ch chan<- result) {
 		log.Fatal(err)
 	}
 
-	ch <- result{title, content, categoryString}
-}
-
-func collectLinks(category Category, ch chan<- urlWrapper) {
-	var urls []string
-	c := colly.NewCollector()
-
-	userAgents := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-	}
-
-	// Set a request callback to randomize user agent per request
-	c.OnRequest(func(r *colly.Request) {
-		// Choose a random user agent from the slice
-		randomUA := userAgents[rand.Intn(len(userAgents))]
-		r.Headers.Set("User-Agent", randomUA)
-		fmt.Println("Visiting:", r.URL, "with User-Agent:", randomUA)
-	})
-
-	c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 2,
-		Delay:       2 * time.Second,
-	})
-
-	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
-		link := e.Attr("href")
-		urls = append(urls, link)
-	})
-
-	c.OnError(func(_ *colly.Response, err error) {
-		log.Println("Error:", err)
-	})
-
-	err := c.Visit(category.Url())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ch <- urlWrapper{urls, category.String()}
+	ch <- result{title, categoryString, content}
 }
 
 type result struct {
@@ -173,15 +137,39 @@ func main() {
 	newsCategory := []Category{
 		Politic, Economy, Social, LivingCulture, ItScience, Global,
 	}
+	var linksWg sync.WaitGroup
 	wrapperCh := make(chan urlWrapper)
+
+	var articlesWg sync.WaitGroup
 	resultCh := make(chan result)
+
 	for _, category := range newsCategory {
-		go collectLinks(category, wrapperCh)
-		urlWrappers := <-wrapperCh
-		for _, url := range urlWrappers.urls {
-			go eachArticle(urlWrappers.category, url, resultCh)
-			data := <-resultCh
-			fmt.Println(data)
+		linksWg.Add(1)
+		go collectLinks(category, wrapperCh, &linksWg)
+	}
+
+	// Close the wrapperCh once all collectLinks goroutines are done.
+	go func() {
+		linksWg.Wait()
+		close(wrapperCh)
+	}()
+
+	// Launch article scraping for each URL as they come in.
+	// There’s no error because the for ... range syntax on a channel is a built-in Go feature that continuously receives values until the channel is closed.
+	go func() {
+		for wrapper := range wrapperCh {
+			for _, url := range wrapper.urls {
+				articlesWg.Add(1)
+				go eachArticle(wrapper.category, url, resultCh, &articlesWg)
+			}
 		}
+		// Once all article scraping goroutines are launched and done, close resultCh.
+		articlesWg.Wait()
+		close(resultCh)
+	}()
+
+	// Process the results concurrently.
+	for res := range resultCh {
+		fmt.Printf("Category: %s, Title: %s\nContent: %s\n\n", res.category, res.title, res.content)
 	}
 }
