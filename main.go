@@ -1,15 +1,16 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/gocolly/colly/v2"
-	"time"
-	//_ "github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var db *sql.DB
@@ -35,7 +36,15 @@ func collectLinks(category Category, ch chan<- urlWrapper, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var urls []string
-	c := colly.NewCollector()
+	c := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+			"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36"),
+	)
+
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9")
+	})
 
 	c.OnHTML("ul[id*='_SECTION_HEADLINE_LIST_'] .sa_text a[class*='sa_text_title']", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
@@ -97,13 +106,14 @@ type urlWrapper struct {
 	category string
 }
 
-func main() {
+func Handler(ctx context.Context) (string, error) {
 	initDB()
 	defer db.Close()
 
-	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES (?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES ($1, $2, $3)")
 	if err != nil {
 		log.Fatal(err)
+		return "", err // Lambda의 경우 오류가 났다고 알려줘야 해
 	}
 	defer stmt.Close()
 
@@ -140,9 +150,15 @@ func main() {
 	for res := range resultCh {
 		_, err := stmt.Exec(res.title, res.content, res.category)
 		if err != nil {
-			log.Println("Insert error:", err)
+			log.Fatal("Insert error:", err)
 		} else {
 			log.Printf("Record inserted: Title: %s, Category: %s\n\n", res.title, res.category)
 		}
 	}
+
+	return "Scraping and insertion completed", nil
+}
+
+func main() {
+	lambda.Start(Handler)
 }
