@@ -2,14 +2,14 @@ package main
 
 import (
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	//_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
-	"time"
-	//_ "github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var db *sql.DB
@@ -101,7 +101,7 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES (?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES ($1, $2, $3)")
 	if err != nil {
 		log.Fatal(err)
 	}
