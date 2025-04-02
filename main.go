@@ -2,68 +2,33 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
+	"time"
+	//_ "github.com/lib/pq"
 	"log"
 	"os"
 	"strings"
 	"sync"
 )
 
-func db_realated() {
-	db, err := sql.Open(os.Getenv("DB"), os.Getenv("DATA_SOURCE")) // 1
+var db *sql.DB
+
+func initDB() {
+	var err error
+	db, err = sql.Open(os.Getenv("DB"), os.Getenv("DATA_SOURCE"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("DB 연동: %+v\n", db.Stats())
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
-	result, err := db.Query("SHOW GLOBAL VARIABLES LIKE 'max_%resultect%'") // 1
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Printf("resultection 생성: %+v\n", db.Stats()) // 2
-
-	for result.Next() { // 3
-		name := ""
-		value := ""
-		if err := result.Scan(&name, &value); err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println(name, value)
-	}
-
-	result, err = db.Query("SELECT * FROM instructor")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for result.Next() {
-		var id int
-		var name string
-		var dept_name string
-		var salary int
-
-		if err := result.Scan(&id, &name, &dept_name, &salary); err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println(id, name, dept_name, salary)
-	}
-
-	_, err = db.Exec(
-		"INSERT INTO instructor (id, name, dept_name, salary) VALUES (7, 'gopher', 'CSE', 10000000)",
-	)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	result.Close() // 4
-	fmt.Printf("resultection 연결 종료: %+v\n", db.Stats())
-
-	db.Close()
-	fmt.Printf("DB 연동 종료: %+v\n", db.Stats())
+	log.Println("Database connection initialized.")
 }
 
 func collectLinks(category Category, ch chan<- urlWrapper, wg *sync.WaitGroup) {
@@ -89,7 +54,6 @@ func collectLinks(category Category, ch chan<- urlWrapper, wg *sync.WaitGroup) {
 	ch <- urlWrapper{urls, category.String()}
 }
 
-// eachArticle scrapes an article for a given URL and sends the result through ch.
 func eachArticle(categoryString string, url string, ch chan<- result, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -134,6 +98,15 @@ type urlWrapper struct {
 }
 
 func main() {
+	initDB()
+	defer db.Close()
+
+	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES (?, ?, ?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stmt.Close()
+
 	newsCategory := []Category{
 		Politic, Economy, Social, LivingCulture, ItScience, Global,
 	}
@@ -148,14 +121,11 @@ func main() {
 		go collectLinks(category, wrapperCh, &linksWg)
 	}
 
-	// Close the wrapperCh once all collectLinks goroutines are done.
 	go func() {
 		linksWg.Wait()
 		close(wrapperCh)
 	}()
 
-	// Launch article scraping for each URL as they come in.
-	// There’s no error because the for ... range syntax on a channel is a built-in Go feature that continuously receives values until the channel is closed.
 	go func() {
 		for wrapper := range wrapperCh {
 			for _, url := range wrapper.urls {
@@ -163,13 +133,16 @@ func main() {
 				go eachArticle(wrapper.category, url, resultCh, &articlesWg)
 			}
 		}
-		// Once all article scraping goroutines are launched and done, close resultCh.
 		articlesWg.Wait()
 		close(resultCh)
 	}()
 
-	// Process the results concurrently.
 	for res := range resultCh {
-		fmt.Printf("Category: %s, Title: %s\nContent: %s\n\n", res.category, res.title, res.content)
+		_, err := stmt.Exec(res.title, res.content, res.category)
+		if err != nil {
+			log.Println("Insert error:", err)
+		} else {
+			log.Printf("Record inserted: Title: %s, Category: %s\n\n", res.title, res.category)
+		}
 	}
 }
