@@ -1,9 +1,8 @@
 package main
 
 import (
-	"database/sql"
-	//_ "github.com/go-sql-driver/mysql"
 	"context"
+	"database/sql"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/gocolly/colly/v2"
 	_ "github.com/lib/pq"
@@ -16,7 +15,6 @@ import (
 
 var db *sql.DB
 
-// initDB opens the database connection and customizes the connection pool.
 func initDB() {
 	var err error
 	db, err = sql.Open(os.Getenv("DB"), os.Getenv("DATA_SOURCE"))
