@@ -2,18 +2,21 @@ package main
 
 import (
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	//_ "github.com/go-sql-driver/mysql"
+	"context"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/gocolly/colly/v2"
-	"time"
-	//_ "github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var db *sql.DB
 
+// initDB opens the database connection and customizes the connection pool.
 func initDB() {
 	var err error
 	db, err = sql.Open(os.Getenv("DB"), os.Getenv("DATA_SOURCE"))
@@ -97,13 +100,16 @@ type urlWrapper struct {
 	category string
 }
 
-func main() {
+// Handler is the AWS Lambda entry point.
+func Handler(ctx context.Context) (string, error) {
+	// Initialize DB connection.
 	initDB()
 	defer db.Close()
 
 	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES (?, ?, ?)")
 	if err != nil {
 		log.Fatal(err)
+		return "", err // Lambda의 경우 오류가 났다고 알려줘야 해
 	}
 	defer stmt.Close()
 
@@ -140,9 +146,15 @@ func main() {
 	for res := range resultCh {
 		_, err := stmt.Exec(res.title, res.content, res.category)
 		if err != nil {
-			log.Println("Insert error:", err)
+			log.Fatal("Insert error:", err)
 		} else {
 			log.Printf("Record inserted: Title: %s, Category: %s\n\n", res.title, res.category)
 		}
 	}
+
+	return "Scraping and insertion completed", nil
+}
+
+func main() {
+	lambda.Start(Handler)
 }
