@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
 	"time"
@@ -26,11 +25,10 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// Verify connection with Ping.
 	if err = db.Ping(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Database connection initialized.")
+	log.Println("Database connection initialized.")
 }
 
 func collectLinks(category Category, ch chan<- urlWrapper, wg *sync.WaitGroup) {
@@ -144,7 +142,7 @@ func main() {
 		if err != nil {
 			log.Println("Insert error:", err)
 		} else {
-			fmt.Printf("Record inserted: Title: %s, Category: %s\n", res.title, res.category)
+			log.Printf("Record inserted: Title: %s, Category: %s\n\n", res.title, res.category)
 		}
 	}
 }
