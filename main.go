@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	//_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
 	_ "github.com/lib/pq"
@@ -14,9 +15,17 @@ import (
 
 var db *sql.DB
 
+func formatWithQuotes(items []string) string {
+	quoted := make([]string, len(items))
+	for i, s := range items {
+		quoted[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(quoted, ", ")
+}
+
 func initDB() {
 	var err error
-	db, err = sql.Open(os.Getenv("DB"), os.Getenv("DATA_SOURCE"))
+	db, err = sql.Open(os.Getenv("DB_MYSQL"), os.Getenv("DATA_SOURCE_MYSQL"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,6 +68,7 @@ func eachArticle(categoryString string, url string, ch chan<- result, wg *sync.W
 
 	var title string
 	var content string
+	var images []string
 
 	c := colly.NewCollector()
 
@@ -74,6 +84,17 @@ func eachArticle(categoryString string, url string, ch chan<- result, wg *sync.W
 		content = cleanText
 	})
 
+	c.OnHTML("article#dic_area img", func(e *colly.HTMLElement) {
+		// first try the normal src
+		link := e.Attr("src")
+		// if that’s empty, fall back to the lazy-load attribute
+		if link == "" {
+			link = e.Attr("data-src")
+		}
+		// make it absolute in case it’s relative
+		link = e.Request.AbsoluteURL(link)
+		images = append(images, link)
+	})
 	c.OnError(func(_ *colly.Response, err error) {
 		log.Println("Something went wrong in eachArticle:", err)
 	})
@@ -83,13 +104,14 @@ func eachArticle(categoryString string, url string, ch chan<- result, wg *sync.W
 		log.Fatal(err)
 	}
 
-	ch <- result{title, categoryString, content}
+	ch <- result{title, categoryString, content, images}
 }
 
 type result struct {
 	title    string
 	category string
 	content  string
+	images   []string
 }
 
 type urlWrapper struct {
@@ -101,7 +123,8 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	stmt, err := db.Prepare("INSERT INTO news (title, content, category) VALUES ($1, $2, $3)")
+	stmt, err := db.Prepare("INSERT INTO news (title, content, category, images) VALUES ($1, $2, $3, $4)")
+	//stmt, err := db.Prepare("INSERT INTO news (title, content, category, images) VALUES (?, ?, ?, ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -138,7 +161,7 @@ func main() {
 	}()
 
 	for res := range resultCh {
-		_, err := stmt.Exec(res.title, res.content, res.category)
+		_, err := stmt.Exec(res.title, res.content, res.category, formatWithQuotes(res.images))
 		if err != nil {
 			log.Println("Insert error:", err)
 		} else {
