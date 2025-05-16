@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	//_ "github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gocolly/colly/v2"
-	_ "github.com/lib/pq"
+	//_ "github.com/lib/pq"
+	openai "github.com/sashabaranov/go-openai"
 	"log"
 	"os"
 	"strings"
@@ -104,14 +106,44 @@ func eachArticle(categoryString string, url string, ch chan<- result, wg *sync.W
 		log.Fatal(err)
 	}
 
-	ch <- result{title, categoryString, content, images}
+	ch <- result{title, categoryString, "", url, content, images}
+}
+
+func computeSubCategory(request string) (respContent string) {
+	client := openai.NewClient(os.Getenv("GPT"))
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT3Dot5Turbo,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role: openai.ChatMessageRoleUser,
+					Content: fmt.Sprintf(`다음 기사 제목들에 대해 카테고리를 분류해줘. 카테고리는 다음과 같이 있어. 나의 국적은 대한민국이야, 국내, 해외를 판별할때 사용해
+DOMESTIC_POLITICS, ELECTION_AND_PRESIDENTIAL, INTERNATIONAL_POLITICS_AND_DIPLOMACY, ECONOMIC_POLICY, CORPORATE_AND_INDUSTRY_TRENDS, FINANCE_AND_SECURITIES, IT_AND_SCIENCE_TECHNOLOGY, TELECOMMUNICATION_AND_MOBILE, SOCIETY_AND_WELFARE, INCIDENT_AND_ACCIDENT, LEGAL_AND_SECURITY, ENVIRONMENT_AND_CLIMATE, CULTURE_AND_ART, ENTERTAINMENT_AND_BROADCASTING, SPORTS, HEALTH_AND_MEDICAL, EDUCATION_AND_ADMISSIONS, REAL_ESTATE_AND_CONSTRUCTION, TRAVEL_AND_LEISURE, COLUMN_AND_OPINION
+다음은 너가 분류해야할 기사 제목이야:
+%s
+다음 예시 형식과 같이 출력해줘, 카테고리만 출력해주면 돼, 내가 보내준 기사 순서와 너가 분류한 카테고리의 출력 순서는 같아야해, 각 기사제목은 ", 제목끝\n" 으로 구분 되어 있어.
+가사 제목의 갯수와 너가 출력할 카테고리의 갯수는 같아야해, 만약 같지 않다면 같아질때 까지 반복해줘
+예시) SPORTS, HEALTH_AND_MEDICAL, CULTURE_AND_ART`, request),
+				},
+			},
+		},
+	)
+	if err != nil {
+		fmt.Printf("ChatCompletion error: %v\n", err)
+		return
+	}
+	respContent = resp.Choices[0].Message.Content
+	return
 }
 
 type result struct {
-	title    string
-	category string
-	content  string
-	images   []string
+	title        string
+	category     string
+	sub_category string
+	article_url  string
+	content      string
+	images       []string
 }
 
 type urlWrapper struct {
@@ -123,8 +155,7 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	stmt, err := db.Prepare("INSERT INTO news (title, content, category, images) VALUES ($1, $2, $3, $4)")
-	//stmt, err := db.Prepare("INSERT INTO news (title, content, category, images) VALUES (?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO news (title, content, category, sub_category, image_url, article_url, news_type) VALUES (?, ?, ?, ?, ?, ?, 'HEADLINE')")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -160,12 +191,22 @@ func main() {
 		close(resultCh)
 	}()
 
+	var results []result
+	var titles []string
 	for res := range resultCh {
-		_, err := stmt.Exec(res.title, res.content, res.category, formatWithQuotes(res.images))
+		results = append(results, res)
+		titles = append(titles, res.title)
+
+	}
+	subCategories := computeSubCategory(strings.Join(titles, ", 제목끝\n"))
+	subCategoriesSlice := strings.Split(subCategories, ", ")
+	for i, ret := range results {
+		ret.sub_category = subCategoriesSlice[i]
+		_, err := stmt.Exec(ret.title, ret.content, ret.category, ret.sub_category, formatWithQuotes(ret.images), ret.article_url)
 		if err != nil {
 			log.Println("Insert error:", err)
 		} else {
-			log.Printf("Record inserted: Title: %s, Category: %s\n\n", res.title, res.category)
+			log.Printf("Record inserted: Title: %s, Category: %s\n\n", ret.title, ret.category)
 		}
 	}
 }

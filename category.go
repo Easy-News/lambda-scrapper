@@ -21,9 +21,9 @@ func (c Category) String() string {
 	case Social:
 		return "Social"
 	case LivingCulture:
-		return "LivingCulture"
+		return "Living_Culture"
 	case ItScience:
-		return "ItScience"
+		return "It_Science"
 	case Global:
 		return "Global"
 	default:
