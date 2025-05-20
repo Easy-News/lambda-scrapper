@@ -114,7 +114,7 @@ func computeSubCategory(request string) (respContent string) {
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
+			Model: openai.GPT4oMini,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role: openai.ChatMessageRoleUser,
@@ -200,6 +200,9 @@ func main() {
 	}
 	subCategories := computeSubCategory(strings.Join(titles, ", 제목끝\n"))
 	subCategoriesSlice := strings.Split(subCategories, ", ")
+	//if len(results) != len(subCategoriesSlice) {
+	//	log.Fatal("FUCK GPT")
+	//}
 	for i, ret := range results {
 		ret.sub_category = subCategoriesSlice[i]
 		_, err := stmt.Exec(ret.title, ret.content, ret.category, ret.sub_category, formatWithQuotes(ret.images), ret.article_url)
