@@ -198,18 +198,43 @@ func main() {
 		titles = append(titles, res.title)
 
 	}
-	subCategories := computeSubCategory(strings.Join(titles, ", 제목끝\n"))
-	subCategoriesSlice := strings.Split(subCategories, ", ")
-	//if len(results) != len(subCategoriesSlice) {
-	//	log.Fatal("FUCK GPT")
-	//}
-	for i, ret := range results {
-		ret.sub_category = subCategoriesSlice[i]
-		_, err := stmt.Exec(ret.title, ret.content, ret.category, ret.sub_category, formatWithQuotes(ret.images), ret.article_url)
+	// Batch GPT requests in groups of 10 to avoid large payloads
+	var allSubCats []string
+	batchSize := 10
+	for start := 0; start < len(titles); start += batchSize {
+		end := start + batchSize
+		if end > len(titles) {
+			end = len(titles)
+		}
+		batchTitles := titles[start:end]
+		joined := strings.Join(batchTitles, ", 제목끝\n")
+		resp := computeSubCategory(joined)
+		resp = strings.TrimSpace(resp)
+		cats := strings.Split(resp, ", ")
+		if len(cats) != len(batchTitles) {
+			log.Printf("❗️ Batch 분류 개수(%d)와 배치 기사 개수(%d)가 다릅니다. 부족한 부분은 UNCATEGORIZED로 채웁니다.", len(cats), len(batchTitles))
+			for len(cats) < len(batchTitles) {
+				cats = append(cats, "UNCATEGORIZED")
+			}
+		}
+		allSubCats = append(allSubCats, cats...)
+	}
+
+	// Assign sub_category and insert each record
+	for i := range results {
+		results[i].sub_category = allSubCats[i]
+		_, err := stmt.Exec(
+			results[i].title,
+			results[i].content,
+			results[i].category,
+			results[i].sub_category,
+			formatWithQuotes(results[i].images),
+			results[i].article_url,
+		)
 		if err != nil {
 			log.Println("Insert error:", err)
 		} else {
-			log.Printf("Record inserted: Title: %s, Category: %s\n\n", ret.title, ret.category)
+			log.Printf("Record inserted: Title: %s, Category: %s\n\n", results[i].title, results[i].category)
 		}
 	}
 }
