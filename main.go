@@ -123,7 +123,7 @@ DOMESTIC_POLITICS, ELECTION_AND_PRESIDENTIAL, INTERNATIONAL_POLITICS_AND_DIPLOMA
 다음은 너가 분류해야할 기사 제목이야:
 %s
 다음 예시 형식과 같이 출력해줘, 카테고리만 출력해주면 돼, 내가 보내준 기사 순서와 너가 분류한 카테고리의 출력 순서는 같아야해, 각 기사제목은 ", 제목끝\n" 으로 구분 되어 있어.
-가사 제목의 갯수와 너가 출력할 카테고리의 갯수는 같아야해, 만약 같지 않다면 같아질때 까지 반복해줘
+가사 제목의 갯수와 너가 출력할 카테고리의 갯수는 10개이거나 그 이하여야 해, 만약 이 조건을 충족하지 못하면 다시 진행해줘 
 예시) SPORTS, HEALTH_AND_MEDICAL, CULTURE_AND_ART`, request),
 				},
 			},
